@@ -1,5 +1,4 @@
 #include <ctype.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,10 +7,15 @@
 #include <unistd.h>
 
 #define INPUT_SIZE 514
+#define HISTORY_SIZE 20
 
 char *words[INPUT_SIZE];
+char *buffer[INPUT_SIZE];
 char *command[INPUT_SIZE];
+char *history[HISTORY_SIZE];
 char *preToken, *postToken;
+int is_batch = 0, is_redirection = 0;
+int history_count = 0, history_head = 0, history_tail = 0;
 
 char prompt_message[7] = "mysh # ";
 char error_message[30] = "An error has occurred\n";
@@ -38,6 +42,34 @@ int split(char *line, char *words[]) {
             input++;
         if (*input == '\0') return count;
         *input++ = '\0';
+    }
+}
+
+void addHistory(char *args) {
+    history_count++;
+    // When buffer is full
+    if (history_tail == history_head - 1 || (history_tail + history_head) == 19) {
+        history[history_head] = strdup(args);
+        history_tail = history_head;
+        history_head = (history_head+1) % HISTORY_SIZE;
+    }
+    // When buffer is not full
+    else if (history_tail > history_head) {
+        history[history_tail] = strdup(args);
+        history_tail++;
+    }
+}
+
+void printHistory(void) {
+    int i, j;
+    if (history_count < 20)
+        for (i = 0; i < history_tail + 1; i++)
+            printf("%d %s\n", i, history[i]);
+    else {
+        for (i = history_head; i < HISTORY_SIZE; i++)
+            printf("%d %s\n", (history_count - HISTORY_SIZE + i - history_head), history[i]);
+        for (j = 0; j <= history_tail; j++)
+            printf("%d %s\n", history_count - history_tail + j, history[j]);
     }
 }
 
@@ -71,6 +103,8 @@ int main (int argc, char *argv[]) {
     while (fgets(input, INPUT_SIZE, inFile)) {
         
         // Input too long
+        if (strlen(input) > 513) {
+            if (is_batch)
                 write(STDOUT_FILENO, input, strlen(input));
             error();
             prompt();
@@ -78,6 +112,7 @@ int main (int argc, char *argv[]) {
         }
         
         // Empty command line
+        if (split(input, buffer) == 0) {
             prompt();
             continue;
         }
@@ -90,6 +125,7 @@ int main (int argc, char *argv[]) {
             write(STDOUT_FILENO, input, strlen(input));
         
         // Search for redirection
+        preToken = strtok(strdup(input), ">");
         if (strlen(preToken) != strlen(input)) {
             is_redirection = 1;
             postToken = strtok(NULL, ">");
@@ -108,6 +144,12 @@ int main (int argc, char *argv[]) {
             count = split(preToken, words);
             i = split(postToken, &words[count]);
             count += i;
+            if (i != 1) {
+                // No output file specified
+                error();
+                prompt();
+                continue;
+            }
         }
         
         if (is_redirection) {
@@ -130,7 +172,6 @@ int main (int argc, char *argv[]) {
             if (count != 1) {
                 error();
                 prompt();
-                dup2(outFile, 1);
                 continue;
             }
             else
@@ -140,14 +181,12 @@ int main (int argc, char *argv[]) {
         if (is_redirection) {
             for (i = 0; i < count - 1; i++)
                 command[i] = strdup(words[i]);
-            command_count = i;
-            command[command_count] = NULL;
+            command[i] = NULL;
         }
         else {
             for (i = 0; i < count; i++)
                 command[i] = strdup(words[i]);
-            command_count = i;
-            command[command_count] = NULL;
+            command[i] = NULL;
         }
         
         child = fork();
