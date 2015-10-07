@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define INPUT_SIZE 514
@@ -13,13 +14,10 @@ char *tmp_words[INPUT_SIZE];
 char *command[INPUT_SIZE];
 int is_batch = 0;
 int is_redirection = 0;
-int is_background = 0;
-int is_internal = 0;
 char *preToken, *postToken;
 
-char prompt_message[6] = "mysh #";
+char prompt_message[7] = "mysh # ";
 char error_message[30] = "An error has occurred\n";
-
 
 void prompt() {
     if (!is_batch)
@@ -76,8 +74,8 @@ int main (int argc, char *argv[]) {
     while (fgets(input, INPUT_SIZE, inFile)) {
         
         // Input too long
-        if (strlen(input) > 513) {
-            if (is_batch)
+        if (strlen(input) >= 513) {
+            if (is_batch && input[strlen(input) - 1] == '\n')
                 write(STDOUT_FILENO, input, strlen(input));
             error();
             prompt();
@@ -91,8 +89,6 @@ int main (int argc, char *argv[]) {
         }
         
         is_redirection = 0;
-        is_background = 0;
-        is_internal = 0;
         preToken = NULL;
         postToken = NULL;
         
@@ -119,14 +115,6 @@ int main (int argc, char *argv[]) {
             count = split(preToken, words);
             i = split(postToken, &words[count]);
             count += i;
-        }
-        
-        if (strcmp(words[count - 1], "&") == 0 || strlen(words[count - 1]) == (1 + strlen(strtok(words[count - 1], "&")))) {
-            is_background = 1;
-            if (strcmp(words[count - 1], "&") == 0) {
-                words[count - 1] = NULL;
-                count--;
-            }
         }
         
         if (is_redirection) {
@@ -156,24 +144,6 @@ int main (int argc, char *argv[]) {
                 exit(0);
         }
         
-        // Wait
-        if (!strcmp("wait", words[0])) {
-            if (count != 1) {
-                error();
-                prompt();
-                dup2(outFile, 1);
-                continue;
-            }
-            else {
-                while (waitpid(-1, NULL, 0))
-                    if (errno == ECHILD)
-                        break;
-                prompt();
-                dup2(outFile, 1);
-                continue;
-            }
-        }
-        
         if (is_redirection) {
             for (i = 0; i < count - 1; i++)
                 command[i] = strdup(words[i]);
@@ -187,21 +157,15 @@ int main (int argc, char *argv[]) {
             command[command_count] = NULL;
         }
         
-        if (!is_internal) {
-            child = fork();
-            // Executed by child
-            if (child == 0) {
-                execvp(command[0], command);
-                error();
-            }
-            // Fork error
-            else if (child == (pid_t)-1)
-                error();
-            // Execute by parent
-            else
-                if (!is_background)
-                    child_wait = wait(&status);
+        child = fork();
+        if (child == 0) {
+            execvp(command[0], command);
+            error();
         }
+        else if (child == (pid_t)-1)
+            error();
+        else
+            child_wait = wait(&status);
         
         dup2(outFile, 1);
         prompt();
