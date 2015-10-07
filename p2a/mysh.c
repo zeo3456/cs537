@@ -76,9 +76,9 @@ void printHistory(void) {
 int main (int argc, char *argv[]) {
     // Variables
     FILE *inFile;
-    int outFile, outFile_1;
     char input[INPUT_SIZE];
-    int count = 0, command_count = 0, i, status;
+    int outFile, outFile_buf, i, status;
+    int count = 0;
     pid_t child, child_wait;
     
     // Interactive or batch mode
@@ -153,7 +153,7 @@ int main (int argc, char *argv[]) {
         }
         
         if (is_redirection) {
-            outFile_1 = dup(1);
+            outFile_buf = dup(1);
             outFile = open(words[count - 1], O_WRONLY|O_CREAT|O_TRUNC, S_IRWXU);
             if (outFile < 0) {
                 error();
