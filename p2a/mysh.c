@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,9 +14,10 @@ char *command[INPUT_SIZE];
 int is_batch = 0;
 int is_redirection = 0;
 int is_background = 0;
+int is_internal = 0;
 char *preToken, *postToken;
 
-char prompt_message[6] = "mysh >";
+char prompt_message[6] = "mysh #";
 char error_message[30] = "An error has occurred\n";
 
 
@@ -49,7 +51,8 @@ int main (int argc, char *argv[]) {
     FILE *inFile;
     int outFile, outFile_1;
     char input[INPUT_SIZE];
-    int count = 0, i;
+    int count = 0, command_count = 0, i, status;
+    pid_t child, child_wait;
     
     // Interactive or batch mode
     if (argc == 1)
@@ -89,6 +92,7 @@ int main (int argc, char *argv[]) {
         
         is_redirection = 0;
         is_background = 0;
+        is_internal = 0;
         preToken = NULL;
         postToken = NULL;
         
@@ -115,30 +119,6 @@ int main (int argc, char *argv[]) {
             count = split(preToken, words);
             i = split(postToken, &words[count]);
             count += i;
-            if (i < 1) {
-                // No output file specified
-                error();
-                prompt();
-                continue;
-            }
-            else if (i > 2) {
-                // Too many output file arguments
-                error();
-                prompt();
-                continue;
-            }
-//            else if (i == 2 && strcmp(words[count - 1], "&") != 0) {
-//                // Too many output file arguments
-//                error();
-//                prompt();
-//                continue;
-//            }
-//            else if (i == 1 && strcmp(words[count - 1], "&") == 0) {
-//                // No output file specified
-//                error();
-//                prompt();
-//                continue;
-//            }
         }
         
         if (strcmp(words[count - 1], "&") == 0 || strlen(words[count - 1]) == (1 + strlen(strtok(words[count - 1], "&")))) {
@@ -164,19 +144,6 @@ int main (int argc, char *argv[]) {
             }
         }
         
-        //        if (is_redirection) {
-        //            for (i = 0; i < count - 1; i++)
-        //                command[i] = strdup(words[i]);
-        //            command_count = i;
-        //            command[command_count] = NULL;
-        //        }
-        //        else {
-        //            for (i = 0; i < count; i++)
-        //                command[i] = strdup(words[i]);
-        //            command_count = i;
-        //            command[command_count] = NULL;
-        //        }
-        
         // Exit
         if (!strcmp("exit", words[0])) {
             if (count != 1) {
@@ -187,6 +154,53 @@ int main (int argc, char *argv[]) {
             }
             else
                 exit(0);
+        }
+        
+        // Wait
+        if (!strcmp("wait", words[0])) {
+            if (count != 1) {
+                error();
+                prompt();
+                dup2(outFile, 1);
+                continue;
+            }
+            else {
+                while (waitpid(-1, NULL, 0))
+                    if (errno == ECHILD)
+                        break;
+                prompt();
+                dup2(outFile, 1);
+                continue;
+            }
+        }
+        
+        if (is_redirection) {
+            for (i = 0; i < count - 1; i++)
+                command[i] = strdup(words[i]);
+            command_count = i;
+            command[command_count] = NULL;
+        }
+        else {
+            for (i = 0; i < count; i++)
+                command[i] = strdup(words[i]);
+            command_count = i;
+            command[command_count] = NULL;
+        }
+        
+        if (!is_internal) {
+            child = fork();
+            // Executed by child
+            if (child == 0) {
+                execvp(command[0], command);
+                error();
+            }
+            // Fork error
+            else if (child == (pid_t)-1)
+                error();
+            // Execute by parent
+            else
+                if (!is_background)
+                    child_wait = wait(&status);
         }
         
         dup2(outFile, 1);
