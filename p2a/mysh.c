@@ -48,13 +48,13 @@ int split(char *line, char *words[]) {
 void addHistory(char *args) {
     history_count++;
     // When buffer is full
-    if (history_tail == history_head - 1 || (history_tail + history_head) == 19) {
+    if (history_tail == history_head - 1 || history_tail + history_head == 19) {
         history[history_head] = strdup(args);
         history_tail = history_head;
-        history_head = (history_head+1) % HISTORY_SIZE;
+        history_head = (history_head + 1) % HISTORY_SIZE;
     }
     // When buffer is not full
-    else if (history_tail > history_head) {
+    else {
         history[history_tail] = strdup(args);
         history_tail++;
     }
@@ -63,13 +63,13 @@ void addHistory(char *args) {
 void printHistory(void) {
     int i, j;
     if (history_count < 20)
-        for (i = 0; i < history_tail + 1; i++)
-            printf("%d %s\n", i, history[i]);
+        for (i = 0; i < history_tail; i++)
+            printf("%d %s", i, history[i]);
     else {
         for (i = history_head; i < HISTORY_SIZE; i++)
-            printf("%d %s\n", (history_count - HISTORY_SIZE + i - history_head), history[i]);
+            printf("%d %s", (history_count - HISTORY_SIZE + i - history_head), history[i]);
         for (j = 0; j <= history_tail; j++)
-            printf("%d %s\n", history_count - history_tail + j, history[j]);
+            printf("%d %s", history_count - history_tail + j, history[j]);
     }
 }
 
@@ -103,6 +103,16 @@ int main (int argc, char *argv[]) {
         
         // Input too long
         if (strlen(input) > 513) {
+            input[512] = NULL;
+            if (is_batch)
+                write(STDOUT_FILENO, input, strlen(input));
+            error();
+            prompt();
+            continue;
+        }
+        
+        if (strlen(input) == 513 && input[512] != '\n') {
+            input[512] = '\n';
             if (is_batch)
                 write(STDOUT_FILENO, input, strlen(input));
             error();
@@ -153,7 +163,7 @@ int main (int argc, char *argv[]) {
                 prompt();
                 continue;
             }
-
+            
             outFile_buf = dup(1);
             outFile = open(words[count - 1], O_WRONLY|O_CREAT|O_TRUNC, S_IRWXU);
             if (outFile < 0) {
@@ -173,10 +183,6 @@ int main (int argc, char *argv[]) {
             command[i] = NULL;
         }
         
-        if (is_redirection) {
-
-        }
-        
         // Exit
         if (!strcmp("exit", words[0])) {
             if (count != 1) {
@@ -188,17 +194,32 @@ int main (int argc, char *argv[]) {
                 exit(0);
         }
         
-        rc = fork();
-        if (rc == 0) {
-            execvp(command[0], command);
-            error();
+        addHistory(input);
+        
+        // History
+        if (!strcmp("history", words[0])) {
+            if (count != 1) {
+                error();
+                prompt();
+                continue;
+            }
+            else
+                printHistory();
         }
-        else if (rc < 0) {
-            error();
-            continue;
+        
+        if (strcmp(command[0], "history") != 0) {
+            rc = fork();
+            if (rc == 0) {
+                execvp(command[0], command);
+                error();
+            }
+            else if (rc < 0) {
+                error();
+                continue;
+            }
+            else
+                (void) wait(NULL);
         }
-        else
-            (void) wait(NULL);
         
         prompt();
     }
