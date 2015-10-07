@@ -48,7 +48,7 @@ int split(char *line, char *words[]) {
 void addHistory(char *args) {
     history_count++;
     // When buffer is full
-    if (history_tail == history_head - 1 || history_tail + history_head == 19) {
+    if (history_count > 20) {
         history[history_head] = strdup(args);
         history_tail = history_head;
         history_head = (history_head + 1) % HISTORY_SIZE;
@@ -62,12 +62,12 @@ void addHistory(char *args) {
 
 void printHistory(void) {
     int i, j;
-    if (history_count < 20)
+    if (history_count <= 20)
         for (i = 0; i < history_tail; i++)
-            printf("%d %s", i, history[i]);
+            printf("%d %s", (i + 1), history[i]);
     else {
         for (i = history_head; i < HISTORY_SIZE; i++)
-            printf("%d %s", (history_count - HISTORY_SIZE + i - history_head), history[i]);
+            printf("%d %s", (history_count - HISTORY_SIZE - history_head +i + 1), history[i]);
         for (j = 0; j <= history_tail; j++)
             printf("%d %s", history_count - history_tail + j, history[j]);
     }
@@ -102,16 +102,7 @@ int main (int argc, char *argv[]) {
     while (fgets(input, INPUT_SIZE, inFile)) {
         
         // Input too long
-        if (strlen(input) > 513) {
-            input[512] = NULL;
-            if (is_batch)
-                write(STDOUT_FILENO, input, strlen(input));
-            error();
-            prompt();
-            continue;
-        }
-        
-        if (strlen(input) == 513 && input[512] != '\n') {
+        if (strlen(input) >= 513 && input[512] != '\n') {
             input[512] = '\n';
             if (is_batch)
                 write(STDOUT_FILENO, input, strlen(input));
