@@ -77,9 +77,8 @@ int main (int argc, char *argv[]) {
     // Variables
     FILE *inFile;
     char input[INPUT_SIZE];
-    int outFile, outFile_buf, i, status;
+    int outFile, outFile_buf, i, rc;
     int count = 0;
-    pid_t child, child_wait;
     
     // Interactive or batch mode
     if (argc == 1)
@@ -138,21 +137,23 @@ int main (int argc, char *argv[]) {
         }
         
         // Handle redirection
-        if (!is_redirection)
+        if (!is_redirection) {
             count = split(input, words);
+            for (i = 0; i < count; i++)
+                command[i] = strdup(words[i]);
+            command[i] = NULL;
+        }
         else {
             count = split(preToken, words);
             i = split(postToken, &words[count]);
             count += i;
+            // No output file
             if (i != 1) {
-                // No output file specified
                 error();
                 prompt();
                 continue;
             }
-        }
-        
-        if (is_redirection) {
+
             outFile_buf = dup(1);
             outFile = open(words[count - 1], O_WRONLY|O_CREAT|O_TRUNC, S_IRWXU);
             if (outFile < 0) {
@@ -165,6 +166,15 @@ int main (int argc, char *argv[]) {
                 prompt();
                 continue;
             }
+            close(outFile);
+            
+            for (i = 0; i < count - 1; i++)
+                command[i] = strdup(words[i]);
+            command[i] = NULL;
+        }
+        
+        if (is_redirection) {
+
         }
         
         // Exit
@@ -178,28 +188,18 @@ int main (int argc, char *argv[]) {
                 exit(0);
         }
         
-        if (is_redirection) {
-            for (i = 0; i < count - 1; i++)
-                command[i] = strdup(words[i]);
-            command[i] = NULL;
-        }
-        else {
-            for (i = 0; i < count; i++)
-                command[i] = strdup(words[i]);
-            command[i] = NULL;
-        }
-        
-        child = fork();
-        if (child == 0) {
+        rc = fork();
+        if (rc == 0) {
             execvp(command[0], command);
             error();
         }
-        else if (child == (pid_t)-1)
+        else if (rc < 0) {
             error();
+            continue;
+        }
         else
-            child_wait = wait(&status);
+            (void) wait(NULL);
         
-        dup2(outFile, 1);
         prompt();
     }
     
