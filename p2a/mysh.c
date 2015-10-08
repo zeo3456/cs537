@@ -14,8 +14,8 @@ char *buffer[INPUT_SIZE];
 char *command[INPUT_SIZE];
 char *history[HISTORY_SIZE];
 char *preToken, *postToken;
-int is_batch = 0, is_redirection = 0;
-int history_count = 0, history_head = 0, history_tail = 0;
+int is_batch = 0, is_redirection = 0, is_history = 0;
+int history_count = 0, history_head = 0, history_tail = 0, head_index = 0, tail_index = 0;
 
 char prompt_message[7] = "mysh # ";
 char error_message[30] = "An error has occurred\n";
@@ -67,7 +67,7 @@ void printHistory(void) {
             printf("%d %s", (i + 1), history[i]);
     else {
         for (i = history_head; i < HISTORY_SIZE; i++)
-            printf("%d %s", (history_count - HISTORY_SIZE - history_head +i + 1), history[i]);
+            printf("%d %s", (history_count - HISTORY_SIZE - history_head + i + 1), history[i]);
         for (j = 0; j <= history_tail; j++)
             printf("%d %s", history_count - history_tail + j, history[j]);
     }
@@ -77,7 +77,7 @@ int main (int argc, char *argv[]) {
     // Variables
     FILE *inFile;
     char input[INPUT_SIZE];
-    int outFile, outFile_buf, i, rc;
+    int outFile, outFile_buf, i, index, rc;
     int count = 0;
     
     // Interactive or batch mode
@@ -99,7 +99,15 @@ int main (int argc, char *argv[]) {
     prompt();
     
     // Handle input
-    while (fgets(input, INPUT_SIZE, inFile)) {
+    while (1) {
+        
+        if (is_history)
+            strcpy(input, history[index]);
+        else {
+            fgets(input, INPUT_SIZE, inFile);
+            if (feof(inFile))
+                break;
+        }
         
         // Input too long
         if (strlen(input) >= 513 && input[512] != '\n') {
@@ -118,6 +126,7 @@ int main (int argc, char *argv[]) {
         }
         
         is_redirection = 0;
+        is_history = 0;
         preToken = NULL;
         postToken = NULL;
         
@@ -175,7 +184,7 @@ int main (int argc, char *argv[]) {
         }
         
         // Exit
-        if (!strcmp("exit", words[0])) {
+        if (!strcmp("exit", command[0])) {
             if (count != 1) {
                 error();
                 prompt();
@@ -185,10 +194,75 @@ int main (int argc, char *argv[]) {
                 exit(0);
         }
         
+        // "!"
+        if (command[0][0] == '!') {
+            if (count == 1) {
+                if (strlen(command[0]) == 1) {
+                    is_history = 1;
+                    index = history_tail - 1;
+                    continue;
+                }
+                else {
+                    char position[strlen(command[0]) - 1];
+                    for (i = 0; i < strlen(command[0]) - 1; i++)
+                        position[i] = command[0][i + 1];
+                    if (atoi(position) == 0) {
+                        error();
+                        prompt();
+                        continue;
+                    }
+                    if (atoi(position) > history_count || atoi(position) < history_count - 19) {
+                        error();
+                        prompt();
+                        continue;
+                    }
+                    if (history_count <= 20)
+                        index = atoi(position) - 1;
+                    else {
+                        if (history_tail <= history_count - atoi(position))
+                            index = HISTORY_SIZE - (history_count - atoi(position) - history_tail);
+                        else
+                            index = history_tail - (history_count - atoi(position));
+                    }
+                    is_history = 1;
+                    continue;
+                }
+            }
+            else if (count == 2) {
+                if (strlen(command[0]) == 1 && atoi(command[1]) != 0) {
+                    if (atoi(command[1]) > history_count || atoi(command[1]) < history_count - 19) {
+                        error();
+                        prompt();
+                        continue;
+                    }
+                    if (history_count <= 20)
+                        index = atoi(command[1]) - 1;
+                    else {
+                        if (history_tail <= history_count - atoi(command[1]))
+                            index = HISTORY_SIZE - (history_count - atoi(command[1]) - history_tail);
+                        else
+                            index = history_tail - (history_count - atoi(command[1]));
+                    }
+                    is_history = 1;
+                    continue;
+                }
+                else {
+                    error();
+                    prompt();
+                    continue;
+                }
+            }
+            else {
+                error();
+                prompt();
+                continue;
+            }
+        }
+        
         addHistory(input);
         
         // History
-        if (!strcmp("history", words[0])) {
+        if (!strcmp("history", command[0])) {
             if (count != 1) {
                 error();
                 prompt();
@@ -198,7 +272,7 @@ int main (int argc, char *argv[]) {
                 printHistory();
         }
         
-        if (strcmp(command[0], "history") != 0) {
+        if (strcmp("history", command[0]) != 0) {
             rc = fork();
             if (rc == 0) {
                 execvp(command[0], command);
